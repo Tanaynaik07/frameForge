@@ -55,7 +55,7 @@
     push(0x21,0xFF,0x0B);str("NETSCAPE2.0");push(3,1,0,0,0);
     for(let i=0;i<frameCount;i++){
       const frame=await getFrame(i);
-      const delay=Math.max(2,Math.round((durations?.[i]||1000/8)/10));
+      const delay=Math.max(2,Math.round(((durations&&durations[i])||1000/8)/10));
       // Disposal method 2 clears the previous frame to the logical background.
       // With transparency enabled, palette index 0 is the transparent background.
       push(0x21,0xF9,4,transparent?0x09:0x08,delay&255,(delay>>8)&255,0,0);

@@ -107,7 +107,7 @@ function commitTransform(t,p){
 function render(){ctx.clearRect(0,0,S.w,S.h);frame().layers.forEach(l=>{if(l.visible)ctx.drawImage(l.canvas,0,0)});if(S.selection){drawSelectionUI()}renderOnion();renderTimeline();renderLayers();$("playbackStat").textContent=S.fps+" FPS";$("stageHint").textContent="Frame "+(S.i+1)+" · "+S.w+" × "+S.h+" · "+(layer().name||"Layer");}
 function renderAll(){render();updateHistory()}
 function select(i){stop();S.i=Math.max(0,Math.min(i,S.frames.length-1));S.li=Math.min(S.li,frame().layers.length-1);S.selection=null;render()}
-function point(e){const r=canvas.getBoundingClientRect();return {x:Math.max(0,Math.min(S.w,(e.clientX-r.left)*S.w/r.width)),y:Math.max(0,Math.min(S.h,(e.clientY-r.top)*S.h/r.height))}}
+function point(e){const r=rectCache||canvas.getBoundingClientRect();return {x:Math.max(0,Math.min(S.w,(e.clientX-r.left)*S.w/r.width)),y:Math.max(0,Math.min(S.h,(e.clientY-r.top)*S.h/r.height))}}
 function drawStroke(a,b){
  const l=layer();if(l.locked||!l.visible)return;
  const g=l.canvas.getContext("2d"),preset=S.brushPreset,alpha=S.opacity;
@@ -137,7 +137,7 @@ function drawStroke(a,b){
 }
 function shape(g,tool,a,b){g.save();g.strokeStyle=S.color;g.lineWidth=S.size;g.lineCap="round";g.beginPath();if(tool==="line"){g.moveTo(a.x,a.y);g.lineTo(b.x,b.y)}else if(tool==="rect")g.rect(a.x,a.y,b.x-a.x,b.y-a.y);else if(tool==="ellipse")g.ellipse((a.x+b.x)/2,(a.y+b.y)/2,Math.abs(b.x-a.x)/2,Math.abs(b.y-a.y)/2,0,0,Math.PI*2);g.stroke();g.restore()}
 function selectTool(t){S.tool=t;document.querySelectorAll(".tool").forEach(b=>b.classList.toggle("active",b.dataset.tool===t));}
-function pointerDown(e){moveQueue=[];strokeDirty=false;if(S.playing||e.button!==undefined&&e.button!==0)return;e.preventDefault();const p=point(e);try{canvas.setPointerCapture(e.pointerId)}catch(_){}if(S.tool==="eyedropper"){const d=ctx.getImageData(Math.min(S.w-1,p.x|0),Math.min(S.h-1,p.y|0),1,1).data;if(d[3]){S.color="#"+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,"0")).join("");$("colorInput").value=S.color;$("colorHex").textContent=S.color.toUpperCase()}return}
+function pointerDown(e){moveQueue=[];strokeDirty=false;dirtyRect=null;rectCache=canvas.getBoundingClientRect();if(S.playing||e.button!==undefined&&e.button!==0)return;e.preventDefault();const p=point(e);try{canvas.setPointerCapture(e.pointerId)}catch(_){}if(S.tool==="eyedropper"){const d=ctx.getImageData(Math.min(S.w-1,p.x|0),Math.min(S.h-1,p.y|0),1,1).data;if(d[3]){S.color="#"+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,"0")).join("");$("colorInput").value=S.color;$("colorHex").textContent=S.color.toUpperCase()}return}
 if(S.tool==="fill"){history();frame().layers.forEach(l=>{if(l.visible&&!l.locked){const g=l.canvas.getContext("2d");g.clearRect(0,0,S.w,S.h)}});if(!S.transparent){S.bg=S.color;$("backgroundInput").value=S.color}render();dirty();return}
 if(S.tool==="select"){
  const l=layer();if(l.locked){note("Unlock this layer before transforming it.",true);return}
@@ -166,7 +166,20 @@ if(S.tool==="select"){
 if(layer().locked){note("This layer is locked. Unlock it to draw.",true);return}
 history();drawing=true;start=last=p;try{canvas.setPointerCapture(e.pointerId)}catch(_){}
 if(["pencil","brush","eraser"].includes(S.tool)){drawStroke(p,{x:p.x+.01,y:p.y+.01});renderLite()}else if(["line","rect","ellipse"].includes(S.tool)){shapePreview=cloneCanvas(layer().canvas)}}
-let moveQueue=[],moveRaf=0,strokeDirty=false;
+let moveQueue=[],moveRaf=0,strokeDirty=false,dirtyRect=null,rectCache=null;
+function addDirty(a,b){
+ const pad=Math.ceil(S.size*2+S.size*(S.softness/24)*2+6);
+ const x0=Math.max(0,Math.floor(Math.min(a.x,b.x)-pad)),y0=Math.max(0,Math.floor(Math.min(a.y,b.y)-pad));
+ const x1=Math.min(S.w,Math.ceil(Math.max(a.x,b.x)+pad)),y1=Math.min(S.h,Math.ceil(Math.max(a.y,b.y)+pad));
+ if(!dirtyRect)dirtyRect={x0,y0,x1,y1};
+ else{dirtyRect.x0=Math.min(dirtyRect.x0,x0);dirtyRect.y0=Math.min(dirtyRect.y0,y0);dirtyRect.x1=Math.max(dirtyRect.x1,x1);dirtyRect.y1=Math.max(dirtyRect.y1,y1)}
+}
+function renderRect(r){
+ const w=r.x1-r.x0,h=r.y1-r.y0;if(w<=0||h<=0)return;
+ ctx.clearRect(r.x0,r.y0,w,h);
+ const ls=frame().layers;
+ for(let i=0;i<ls.length;i++)if(ls[i].visible)ctx.drawImage(ls[i].canvas,r.x0,r.y0,w,h,r.x0,r.y0,w,h);
+}
 function isStrokeTool(){return S.tool==="pencil"||S.tool==="brush"||S.tool==="eraser"}
 function pointerMove(e){
  if(!drawing)return;e.preventDefault();
@@ -174,7 +187,7 @@ function pointerMove(e){
  if(isStrokeTool())moveQueue.push(pt);else moveQueue=[pt];
  if(!moveRaf)moveRaf=requestAnimationFrame(flushMoves);
 }
-function runMoves(){const q=moveQueue;moveQueue=[];for(let i=0;i<q.length;i++)processMove(q[i]);if(strokeDirty){strokeDirty=false;renderLite()}}
+function runMoves(){const q=moveQueue;moveQueue=[];for(let i=0;i<q.length;i++)processMove(q[i]);if(strokeDirty){strokeDirty=false;const r=dirtyRect;dirtyRect=null;if(S.selection||!r)renderLite();else renderRect(r)}}
 function flushMoves(){moveRaf=0;if(!drawing){moveQueue=[];return}runMoves()}
 function flushMovesNow(){if(moveRaf){cancelAnimationFrame(moveRaf);moveRaf=0}runMoves()}
 function processMove(e){const p=point(e);if(S.tool==="select"&&S.transform){const t=S.transform;if(t.mode==="select"){const a=t.start;S.selection={x:Math.min(a.x,p.x),y:Math.min(a.y,p.y),w:Math.abs(p.x-a.x),h:Math.abs(p.y-a.y)};renderLite();return}if(t.mode==="move"){
@@ -193,8 +206,8 @@ function processMove(e){const p=point(e);if(S.tool==="select"&&S.transform){cons
    ctx.drawImage(t.cut,-t.rect.w/2,-t.rect.h/2,t.rect.w,t.rect.h);ctx.restore();
  }else{const r=t.previewRect;ctx.drawImage(t.cut,r.x,r.y,r.w,r.h)}
  drawSelectionUI();return}
-if(["pencil","brush","eraser"].includes(S.tool)){drawStroke(last,p);last=p;strokeDirty=true}else if(shapePreview){ctx.clearRect(0,0,S.w,S.h);frame().layers.forEach(l=>{if(l.visible&&l!==layer())ctx.drawImage(l.canvas,0,0)});ctx.drawImage(shapePreview,0,0);shape(ctx,S.tool,start,p)}}
-function pointerUp(e){if(!drawing)return;flushMovesNow();drawing=false;const p=e&&Number.isFinite(e.clientX)?point(e):(last||start||{x:0,y:0});if(S.tool==="select"&&S.transform){const t=S.transform;if(t.mode==="select"){S.transform=null;render();note("Selection ready. Drag inside to move, corner/edge handles to resize, or the top handle to rotate.");return}commitTransform(t,p);return}if(shapePreview){shape(layer().canvas.getContext("2d"),S.tool,start,p);shapePreview=null}render();dirty()}
+if(["pencil","brush","eraser"].includes(S.tool)){drawStroke(last,p);addDirty(last,p);last=p;strokeDirty=true}else if(shapePreview){ctx.clearRect(0,0,S.w,S.h);frame().layers.forEach(l=>{if(l.visible&&l!==layer())ctx.drawImage(l.canvas,0,0)});ctx.drawImage(shapePreview,0,0);shape(ctx,S.tool,start,p)}}
+function pointerUp(e){if(!drawing)return;flushMovesNow();drawing=false;rectCache=null;const p=e&&Number.isFinite(e.clientX)?point(e):(last||start||{x:0,y:0});if(S.tool==="select"&&S.transform){const t=S.transform;if(t.mode==="select"){S.transform=null;render();note("Selection ready. Drag inside to move, corner/edge handles to resize, or the top handle to rotate.");return}commitTransform(t,p);return}if(shapePreview){shape(layer().canvas.getContext("2d"),S.tool,start,p);shapePreview=null}render();dirty()}
 function addFrame(copy){history();const nf=newFrame();if(copy){nf.duration=frame().duration;nf.layers=nf.layers.map((l,i)=>{const src=frame().layers[i];if(src){l.name=src.name;l.visible=src.visible;l.locked=src.locked;l.canvas=cloneCanvas(src.canvas)}return l});nf.layers=frame().layers.map(l=>({id:uid(),name:l.name,visible:l.visible,locked:false,canvas:cloneCanvas(l.canvas)}))}S.frames.splice(S.i+1,0,nf);S.i++;S.li=0;renderAll();dirty()}
 function clearFrame(){history();const l=layer();if(!l.locked)l.canvas.getContext("2d").clearRect(0,0,S.w,S.h);else note("Unlock the active layer first.",true);renderAll();dirty()}
 function deleteFrame(){if(S.frames.length===1){clearFrame();return}history();S.frames.splice(S.i,1);S.i=Math.min(S.i,S.frames.length-1);S.li=0;renderAll();dirty()}
