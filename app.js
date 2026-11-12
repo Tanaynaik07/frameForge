@@ -52,7 +52,7 @@
   // ---------- state ----------
   var view = $('view'), vctx = view.getContext('2d'), stage = $('stage');
   var S = { w: 640, h: 360, fps: 12, bg: '#ffffff', transparent: false, layers: [], frames: [], cur: 0, li: 0, nid: 1, loop: true, onion: 1, grid: false };
-  var T = { tool: 'pen', size: 8, opacity: 100, color: '#222222', tol: 32, fillAll: false, shapeFill: false };
+  var T = { tool: 'pen', size: 8, opacity: 100, color: '#222222', tol: 32, fillAll: false, shapeFill: false, stab: 0, sizes: {}, sym: 'off', symMirror: false, symGuides: true };
   var V = { zoom: 1, px: 0, py: 0 };
   var undoStack = [], redoStack = [];
   var strokeCv = mk(1, 1), tmpCv = mk(1, 1), onionCv = mk(1, 1);
@@ -188,6 +188,7 @@
       c.restore();
     }
     if (!playing) {
+      drawSymGuides(c);
       if (selRect) {
         c.save();
         c.lineWidth = 1.5 / V.zoom;
@@ -196,17 +197,111 @@
         c.strokeRect(selRect.x, selRect.y, selRect.w, selRect.h);
         c.restore();
       }
-      if (fl) {
-        c.save();
-        c.translate(fl.cx, fl.cy);
-        c.rotate(fl.rot);
-        c.scale(fl.sc, fl.sc);
-        c.lineWidth = 1.5 / (V.zoom * fl.sc);
-        c.setLineDash([5 / (V.zoom * fl.sc), 4 / (V.zoom * fl.sc)]);
-        c.strokeStyle = '#0a84ff';
-        c.strokeRect(-fl.w / 2, -fl.h / 2, fl.w, fl.h);
-        c.restore();
+      drawFloatUI(c);
+      drawLassoUI(c);
+    }
+  }
+
+  // ---------- overlays: symmetry guides, lasso path, transform handles ----------
+  var HANDLE_PX = 16, ROT_OFF_PX = 30;
+  function floatGeom() {
+    var z = V.zoom;
+    var g = { hw: Math.abs(fl.sx * fl.sc) * fl.w / 2, hh: Math.abs(fl.sy * fl.sc) * fl.h / 2, hr: HANDLE_PX / z, off: ROT_OFF_PX / z };
+    g.edgeH = g.hw > g.hr * 1.6; // top/bottom edge handles fit
+    g.edgeV = g.hh > g.hr * 1.6; // left/right edge handles fit
+    return g;
+  }
+  function drawFloatUI(c) {
+    if (!fl) return;
+    var g = floatGeom(), z = V.zoom, hs = 5 / z;
+    c.save();
+    c.translate(fl.cx, fl.cy);
+    c.rotate(fl.rot);
+    c.lineWidth = 1.5 / z;
+    c.setLineDash([5 / z, 4 / z]);
+    c.strokeStyle = '#0a84ff';
+    c.strokeRect(-g.hw, -g.hh, g.hw * 2, g.hh * 2);
+    c.setLineDash([]);
+    c.beginPath(); c.moveTo(0, -g.hh); c.lineTo(0, -g.hh - g.off); c.stroke();
+    c.fillStyle = '#ffffff';
+    var pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    if (g.edgeH) pts.push([0, -1], [0, 1]);
+    if (g.edgeV) pts.push([-1, 0], [1, 0]);
+    for (var i = 0; i < pts.length; i++) {
+      var px = pts[i][0] * g.hw, py = pts[i][1] * g.hh;
+      c.beginPath(); c.rect(px - hs, py - hs, hs * 2, hs * 2); c.fill(); c.stroke();
+    }
+    c.fillStyle = '#0a84ff';
+    c.beginPath(); c.arc(0, -g.hh - g.off, 6 / z, 0, 6.2832); c.fill();
+    c.strokeStyle = '#ffffff'; c.lineWidth = 1.5 / z; c.stroke();
+    c.restore();
+  }
+  function drawLassoUI(c) {
+    if (!(st.active && st.kind === 'lasso' && st.pts.length > 1)) return;
+    c.save();
+    c.beginPath();
+    c.moveTo(st.pts[0][0], st.pts[0][1]);
+    for (var i = 1; i < st.pts.length; i++) c.lineTo(st.pts[i][0], st.pts[i][1]);
+    c.closePath();
+    c.fillStyle = 'rgba(10,132,255,0.12)';
+    c.fill();
+    c.lineWidth = 1.5 / V.zoom;
+    c.setLineDash([5 / V.zoom, 4 / V.zoom]);
+    c.strokeStyle = '#0a84ff';
+    c.stroke();
+    c.restore();
+  }
+  function drawSymGuides(c) {
+    if (T.sym === 'off' || !T.symGuides) return;
+    var W = S.w, H = S.h, cx = W / 2, cy = H / 2;
+    c.save();
+    c.lineWidth = 1.5 / V.zoom;
+    c.setLineDash([6 / V.zoom, 5 / V.zoom]);
+    c.strokeStyle = 'rgba(255,45,85,0.75)';
+    c.beginPath();
+    if (T.sym === 'v' || T.sym === 'both') { c.moveTo(cx, 0); c.lineTo(cx, H); }
+    if (T.sym === 'h' || T.sym === 'both') { c.moveTo(0, cy); c.lineTo(W, cy); }
+    if (T.sym.charAt(0) === 'r') {
+      var n = parseInt(T.sym.slice(1), 10), R = Math.sqrt(W * W + H * H);
+      for (var k = 0; k < n; k++) {
+        var a = Math.PI * 2 * k / n;
+        c.moveTo(cx, cy); c.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
       }
+    }
+    c.stroke();
+    c.restore();
+  }
+
+  // ---------- symmetry ----------
+  function matMul(A, B) { // apply B first, then A
+    return [A[0] * B[0] + A[2] * B[1], A[1] * B[0] + A[3] * B[1], A[0] * B[2] + A[2] * B[3], A[1] * B[2] + A[3] * B[3],
+      A[0] * B[4] + A[2] * B[5] + A[4], A[1] * B[4] + A[3] * B[5] + A[5]];
+  }
+  function symMats() {
+    var m = T.sym, W = S.w, H = S.h, cx = W / 2, cy = H / 2, I = [1, 0, 0, 1, 0, 0];
+    var FX = [-1, 0, 0, 1, W, 0], FY = [1, 0, 0, -1, 0, H];
+    if (m === 'off') return [I];
+    if (m === 'v') return [I, FX];
+    if (m === 'h') return [I, FY];
+    if (m === 'both') return [I, FX, FY, [-1, 0, 0, -1, W, H]];
+    var n = parseInt(m.slice(1), 10) || 4, out = [];
+    for (var k = 0; k < n; k++) {
+      var a = Math.PI * 2 * k / n, co = Math.cos(a), si = Math.sin(a);
+      var R = [co, si, -si, co, cx - co * cx + si * cy, cy - si * cx - co * cy];
+      out.push(R);
+      if (T.symMirror) out.push(matMul(R, FX));
+    }
+    return out;
+  }
+  // Runs fn once per symmetry copy, with the context transformed for that copy.
+  function eachSym(ctx, fn) {
+    if (T.sym === 'off') { fn(); return; }
+    var ms = symMats();
+    for (var i = 0; i < ms.length; i++) {
+      ctx.save();
+      ctx.transform(ms[i][0], ms[i][1], ms[i][2], ms[i][3], ms[i][4], ms[i][5]);
+      fn();
+      ctx.restore();
     }
   }
 
@@ -278,9 +373,20 @@
   }
 
   // ---------- drawing tools ----------
+  // Each drawing tool remembers its own size.
+  var SIZE_DEFAULTS = { pen: 8, pencil: 8, marker: 20, airbrush: 30, charcoal: 16, eraser: 20, line: 4, rect: 4, oval: 4 };
+  function setSize(v) {
+    T.size = clamp(Math.round(v), 1, 80);
+    if (SIZE_DEFAULTS[T.tool] !== undefined) T.sizes[T.tool] = T.size;
+    $('size').value = T.size;
+    $('sizeVal').textContent = T.size;
+  }
   function setTool(t) {
-    if (t !== 'select') commitFloat();
+    if (t !== 'select' && t !== 'lasso') commitFloat();
     T.tool = t;
+    if (SIZE_DEFAULTS[t] !== undefined) {
+      setSize(T.sizes[t] !== undefined ? T.sizes[t] : SIZE_DEFAULTS[t]);
+    }
     var bs = document.querySelectorAll('#toolbar .tool');
     for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i].getAttribute('data-tool') === t);
     $('optFill').style.display = t === 'fill' ? 'block' : 'none';
@@ -300,19 +406,71 @@
     }
     ctx.globalAlpha = 1;
   }
-  function pencilLine(ctx, a, b) {
+  function charcoalStamp(ctx, x, y) {
+    var r = T.size * 0.6;
+    var n = Math.min(160, Math.max(6, Math.round(T.size * T.size * 0.35)));
+    ctx.globalAlpha = 0.04;
+    ctx.beginPath(); ctx.arc(x, y, r * 0.9, 0, 6.2832); ctx.fill();
+    for (var i = 0; i < n; i++) {
+      var a = Math.random() * 6.2832, d = Math.sqrt(Math.random()) * r;
+      var s = 1 + Math.random() * 2.6;
+      ctx.globalAlpha = 0.12 + Math.random() * 0.55;
+      ctx.fillRect(x + Math.cos(a) * d - s / 2, y + Math.sin(a) * d - s / 2, s, s * (0.5 + Math.random()));
+    }
+    ctx.globalAlpha = 1;
+  }
+  function markerStamp(ctx, x, y) { // flat chisel tip held at 40 degrees
+    var th = Math.max(2, T.size * 0.3);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-0.7);
+    ctx.fillRect(-T.size / 2, -th / 2, T.size, th);
+    ctx.restore();
+  }
+  function makeSoftTip(color, r) {
+    var d = Math.ceil(r) * 2, c = mk(d, d), x = c.getContext('2d'), rgb = hexToRgb(color);
+    var rc = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',';
+    var gr = x.createRadialGradient(d / 2, d / 2, 0, d / 2, d / 2, d / 2);
+    gr.addColorStop(0, rc + '1)');
+    gr.addColorStop(0.5, rc + '0.4)');
+    gr.addColorStop(1, rc + '0)');
+    x.fillStyle = gr;
+    x.fillRect(0, 0, d, d);
+    return c;
+  }
+  function airbrushStamp(ctx, x, y) {
+    var d = st.tip.width;
+    ctx.globalAlpha = 0.12;
+    ctx.drawImage(st.tip, x - d / 2, y - d / 2);
+    ctx.globalAlpha = 1;
+  }
+  // Stamp-based brushes: spacing = distance between stamps, alphaMul = stroke translucency.
+  var BRUSHES = {
+    pencil: { stamp: pencilStamp, spacing: function () { return Math.max(1, T.size * 0.18); }, alphaMul: 1 },
+    marker: { stamp: markerStamp, spacing: function () { return Math.max(0.8, Math.max(2, T.size * 0.3) * 0.35); }, alphaMul: 0.8 },
+    airbrush: { stamp: airbrushStamp, spacing: function () { return Math.max(1, T.size * 0.07); }, alphaMul: 1,
+      prep: function () { return makeSoftTip(T.color, Math.max(2, T.size * 0.75)); } },
+    charcoal: { stamp: charcoalStamp, spacing: function () { return Math.max(1, T.size * 0.15); }, alphaMul: 1 }
+  };
+  function stampLine(ctx, a, b) {
     var dx = b[0] - a[0], dy = b[1] - a[1], d = Math.sqrt(dx * dx + dy * dy);
     if (d === 0) return;
-    var sp = Math.max(1, T.size * 0.18);
-    var pos = st.carry;
-    while (pos <= d) {
-      pencilStamp(ctx, a[0] + dx * pos / d, a[1] + dy * pos / d);
-      pos += sp;
-    }
-    st.carry = pos - d;
+    var sp = st.spacing, start = st.carry, endCarry = start, stamp = st.stamp;
+    eachSym(ctx, function () {
+      var pos = start;
+      while (pos <= d) {
+        stamp(ctx, a[0] + dx * pos / d, a[1] + dy * pos / d);
+        pos += sp;
+      }
+      endCarry = pos - d;
+    });
+    st.carry = endCarry;
   }
   function drawShape(ctx, x0, y0, x1, y1) {
     ctx.clearRect(0, 0, S.w, S.h);
+    eachSym(ctx, function () { drawShapeOnce(ctx, x0, y0, x1, y1); });
+  }
+  function drawShapeOnce(ctx, x0, y0, x1, y1) {
     ctx.save();
     ctx.lineWidth = T.size;
     ctx.lineCap = 'round';
@@ -339,7 +497,7 @@
   }
   function cancelStroke() {
     if (!st.active) return;
-    if (st.kind === 'stroke' || st.kind === 'pencil' || st.kind === 'shape') {
+    if (st.kind === 'stroke' || st.kind === 'stamp' || st.kind === 'shape') {
       if (st.ctx) st.ctx.restore();
       strokeCv.getContext('2d').clearRect(0, 0, S.w, S.h);
       if (st.erase) doUndo(false); else undoStack.pop();
@@ -415,15 +573,34 @@
   }
 
   // ----- selection / floating pixels -----
-  function liftRect(r) {
+  function polyPath(ctx, poly, ox, oy) {
+    ctx.beginPath();
+    ctx.moveTo(poly[0][0] - ox, poly[0][1] - oy);
+    for (var i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0] - ox, poly[i][1] - oy);
+    ctx.closePath();
+  }
+  function liftRect(r, poly) {
     var l = curLayer();
     if (l.locked || !l.visible) { toast(l.locked ? 'Layer is locked' : 'Layer is hidden'); return false; }
     var x = Math.round(r.x), y = Math.round(r.y), w = Math.round(r.w), h = Math.round(r.h);
     if (w < 1 || h < 1) return false;
     pushUndo();
-    var c = mk(w, h);
-    c.getContext('2d').drawImage(curCv(), x, y, w, h, 0, 0, w, h);
-    curCv().getContext('2d').clearRect(x, y, w, h);
+    var c = mk(w, h), cc = c.getContext('2d'), lc = curCv().getContext('2d');
+    if (poly) {
+      cc.save();
+      polyPath(cc, poly, x, y);
+      cc.clip();
+      cc.drawImage(curCv(), x, y, w, h, 0, 0, w, h);
+      cc.restore();
+      lc.save();
+      polyPath(lc, poly, 0, 0);
+      lc.clip();
+      lc.clearRect(x, y, w, h);
+      lc.restore();
+    } else {
+      cc.drawImage(curCv(), x, y, w, h, 0, 0, w, h);
+      lc.clearRect(x, y, w, h);
+    }
     fl = { cv: c, cx: x + w / 2, cy: y + h / 2, sc: 1, sx: 1, sy: 1, rot: 0, w: w, h: h };
     return true;
   }
@@ -443,11 +620,61 @@
     fl = null; selRect = null;
     afterEdit();
   }
-  function hitFloat(x, y) {
+  // What is under the pointer: a scale handle, the rotate handle/ring, the body (move) or nothing.
+  function floatHit(x, y) {
+    var g = floatGeom(), cs = Math.cos(fl.rot), sn = Math.sin(fl.rot);
     var dx = x - fl.cx, dy = y - fl.cy;
-    var cs = Math.cos(fl.rot), sn = Math.sin(fl.rot);
-    var px = (dx * cs + dy * sn) / fl.sc, py = (-dx * sn + dy * cs) / fl.sc;
-    return Math.abs(px) <= fl.w / 2 && Math.abs(py) <= fl.h / 2;
+    var lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+    function near(ax, ay, r) { var ex = lx - ax, ey = ly - ay; return ex * ex + ey * ey <= r * r; }
+    var i, sx, sy, cn = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    if (near(0, -g.hh - g.off, g.hr * 1.2)) return { type: 'rotate' };
+    for (i = 0; i < 4; i++) if (near(cn[i][0] * g.hw, cn[i][1] * g.hh, g.hr)) return { type: 'scale', hx: cn[i][0], hy: cn[i][1] };
+    if (g.edgeH) {
+      if (near(0, -g.hh, g.hr)) return { type: 'scale', hx: 0, hy: -1 };
+      if (near(0, g.hh, g.hr)) return { type: 'scale', hx: 0, hy: 1 };
+    }
+    if (g.edgeV) {
+      if (near(-g.hw, 0, g.hr)) return { type: 'scale', hx: -1, hy: 0 };
+      if (near(g.hw, 0, g.hr)) return { type: 'scale', hx: 1, hy: 0 };
+    }
+    if (Math.abs(lx) <= g.hw && Math.abs(ly) <= g.hh) return { type: 'move' };
+    for (i = 0; i < 4; i++) if (near(cn[i][0] * g.hw, cn[i][1] * g.hh, g.hr * 2.6)) return { type: 'rotate' };
+    return null;
+  }
+  function beginFloatDrag(h, x, y) {
+    if (h.type === 'move') {
+      st = { active: true, kind: 'moveFloat', dx: x - fl.cx, dy: y - fl.cy };
+    } else if (h.type === 'rotate') {
+      st = { active: true, kind: 'rotFloat', a0: Math.atan2(y - fl.cy, x - fl.cx), r0: fl.rot };
+    } else {
+      var g = floatGeom();
+      st = { active: true, kind: 'scaleFloat', hx: h.hx, hy: h.hy, hw0: g.hw, hh0: g.hh, c0x: fl.cx, c0y: fl.cy, rot0: fl.rot,
+        ax: -h.hx * g.hw, ay: -h.hy * g.hh, sgx: fl.sx < 0 ? -1 : 1, sgy: fl.sy < 0 ? -1 : 1 };
+    }
+  }
+  function updateFloatScale(x, y) {
+    var cs = Math.cos(st.rot0), sn = Math.sin(st.rot0);
+    var dx = x - st.c0x, dy = y - st.c0y;
+    var px = dx * cs + dy * sn, py = -dx * sn + dy * cs;
+    var W0 = Math.max(1, st.hw0 * 2), H0 = Math.max(1, st.hh0 * 2), MIN = 4;
+    var nW = W0, nH = H0, ncx = 0, ncy = 0;
+    var dirx = (px - st.ax) >= 0 ? 1 : -1, diry = (py - st.ay) >= 0 ? 1 : -1;
+    if (st.hx !== 0 && st.hy !== 0) { // corner: keep proportions
+      var k = Math.max(Math.abs(px - st.ax) / W0, Math.abs(py - st.ay) / H0, MIN / Math.min(W0, H0));
+      nW = W0 * k; nH = H0 * k;
+      ncx = st.ax + dirx * nW / 2; ncy = st.ay + diry * nH / 2;
+    } else if (st.hx !== 0) { // left/right edge: stretch width only
+      nW = Math.max(MIN, Math.abs(px - st.ax));
+      ncx = st.ax + dirx * nW / 2;
+    } else { // top/bottom edge: stretch height only
+      nH = Math.max(MIN, Math.abs(py - st.ay));
+      ncy = st.ay + diry * nH / 2;
+    }
+    fl.cx = st.c0x + ncx * cs - ncy * sn;
+    fl.cy = st.c0y + ncx * sn + ncy * cs;
+    fl.sc = 1;
+    fl.sx = st.sgx * nW / fl.w;
+    fl.sy = st.sgy * nH / fl.h;
   }
   function xform(fn) {
     var l = curLayer();
@@ -506,11 +733,19 @@
     if (t === 'pick') { pickColor(x, y); return; }
     var l = curLayer();
     if (l.locked || !l.visible) { toast(l.locked ? 'Layer is locked' : 'Layer is hidden'); return; }
-    if (t === 'select') {
-      if (fl && hitFloat(x, y)) { st = { active: true, kind: 'moveFloat', dx: x - fl.cx, dy: y - fl.cy }; return; }
-      if (fl) commitFloat();
-      st = { active: true, kind: 'selRect', x0: x, y0: y };
-      selRect = { x: x, y: y, w: 0, h: 0 };
+    if (t === 'select' || t === 'lasso') {
+      if (fl) {
+        var hit = floatHit(x, y);
+        if (hit) { beginFloatDrag(hit, x, y); return; }
+        commitFloat();
+      }
+      if (t === 'select') {
+        st = { active: true, kind: 'selRect', x0: x, y0: y };
+        selRect = { x: x, y: y, w: 0, h: 0 };
+      } else {
+        st = { active: true, kind: 'lasso', pts: [[x, y]] };
+      }
+      requestRender();
       return;
     }
     if (fl) commitFloat();
@@ -529,15 +764,17 @@
       } else {
         ctx.strokeStyle = ctx.fillStyle = T.color;
       }
-      ctx.beginPath(); ctx.arc(x, y, T.size / 2, 0, 6.2832); ctx.fill();
+      eachSym(ctx, function () { ctx.beginPath(); ctx.arc(x, y, T.size / 2, 0, 6.2832); ctx.fill(); });
       st = { active: true, kind: 'stroke', erase: erase, ctx: ctx, pts: [[x, y]], overlay: !erase, alpha: T.opacity / 100 };
-    } else if (t === 'pencil') {
-      var pc = strokeCv.getContext('2d');
+    } else if (BRUSHES[t]) {
+      var def = BRUSHES[t], pc = strokeCv.getContext('2d');
       pc.clearRect(0, 0, S.w, S.h);
       pc.save();
       pc.fillStyle = T.color;
-      pencilStamp(pc, x, y);
-      st = { active: true, kind: 'pencil', ctx: pc, last: [x, y], carry: Math.max(1, T.size * 0.18), overlay: true, alpha: T.opacity / 100 };
+      var sp = def.spacing();
+      st = { active: true, kind: 'stamp', ctx: pc, last: [x, y], carry: sp, spacing: sp, stamp: def.stamp,
+        tip: def.prep ? def.prep() : null, overlay: true, alpha: T.opacity / 100 * def.alphaMul };
+      eachSym(pc, function () { def.stamp(pc, x, y); });
     } else {
       strokeCv.getContext('2d').clearRect(0, 0, S.w, S.h);
       st = { active: true, kind: 'shape', x0: x, y0: y, overlay: true, alpha: T.opacity / 100 };
@@ -551,18 +788,20 @@
       var p = st.pts, c = st.ctx;
       p.push([x, y]);
       var n = p.length;
-      c.beginPath();
-      if (n === 2) {
-        var m = mid(p[0], p[1]);
-        c.moveTo(p[0][0], p[0][1]); c.lineTo(m[0], m[1]);
-      } else {
-        var a = mid(p[n - 3], p[n - 2]), b = mid(p[n - 2], p[n - 1]);
-        c.moveTo(a[0], a[1]); c.quadraticCurveTo(p[n - 2][0], p[n - 2][1], b[0], b[1]);
-      }
-      c.stroke();
+      eachSym(c, function () {
+        c.beginPath();
+        if (n === 2) {
+          var m = mid(p[0], p[1]);
+          c.moveTo(p[0][0], p[0][1]); c.lineTo(m[0], m[1]);
+        } else {
+          var a = mid(p[n - 3], p[n - 2]), b = mid(p[n - 2], p[n - 1]);
+          c.moveTo(a[0], a[1]); c.quadraticCurveTo(p[n - 2][0], p[n - 2][1], b[0], b[1]);
+        }
+        c.stroke();
+      });
       requestRender();
-    } else if (k === 'pencil') {
-      pencilLine(st.ctx, st.last, [x, y]);
+    } else if (k === 'stamp') {
+      stampLine(st.ctx, st.last, [x, y]);
       st.last = [x, y];
       requestRender();
     } else if (k === 'shape') {
@@ -573,8 +812,18 @@
       var x1 = clamp(Math.max(st.x0, x), 0, S.w), y1 = clamp(Math.max(st.y0, y), 0, S.h);
       selRect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
       requestRender();
+    } else if (k === 'lasso') {
+      var lp = st.pts[st.pts.length - 1], ddx = x - lp[0], ddy = y - lp[1];
+      if (ddx * ddx + ddy * ddy >= 1.5 / V.zoom) st.pts.push([clamp(x, 0, S.w), clamp(y, 0, S.h)]);
+      requestRender();
     } else if (k === 'moveFloat') {
       fl.cx = x - st.dx; fl.cy = y - st.dy;
+      requestRender();
+    } else if (k === 'scaleFloat') {
+      updateFloatScale(x, y);
+      requestRender();
+    } else if (k === 'rotFloat') {
+      fl.rot = st.r0 + (Math.atan2(y - fl.cy, x - fl.cx) - st.a0);
       requestRender();
     }
   }
@@ -583,19 +832,32 @@
     if (k === 'stroke') {
       var p = st.pts, n = p.length;
       if (n >= 2) {
-        var m = mid(p[n - 2], p[n - 1]);
-        st.ctx.beginPath(); st.ctx.moveTo(m[0], m[1]); st.ctx.lineTo(p[n - 1][0], p[n - 1][1]); st.ctx.stroke();
+        var m = mid(p[n - 2], p[n - 1]), sc2 = st.ctx;
+        eachSym(sc2, function () { sc2.beginPath(); sc2.moveTo(m[0], m[1]); sc2.lineTo(p[n - 1][0], p[n - 1][1]); sc2.stroke(); });
       }
       st.ctx.restore();
       if (!st.erase) commitStroke(st.alpha);
       afterEdit();
-    } else if (k === 'pencil') {
+    } else if (k === 'stamp') {
       st.ctx.restore();
       commitStroke(st.alpha);
       afterEdit();
     } else if (k === 'shape') {
       commitStroke(st.alpha);
       afterEdit();
+    } else if (k === 'lasso') {
+      var lpts = st.pts;
+      if (lpts.length >= 3) {
+        var bx0 = S.w, by0 = S.h, bx1 = 0, by1 = 0;
+        for (var li = 0; li < lpts.length; li++) {
+          bx0 = Math.min(bx0, lpts[li][0]); by0 = Math.min(by0, lpts[li][1]);
+          bx1 = Math.max(bx1, lpts[li][0]); by1 = Math.max(by1, lpts[li][1]);
+        }
+        var lx = Math.floor(bx0), ly = Math.floor(by0);
+        var lw = Math.min(S.w, Math.ceil(bx1)) - lx, lh = Math.min(S.h, Math.ceil(by1)) - ly;
+        if (lw >= 3 && lh >= 3) liftRect({ x: lx, y: ly, w: lw, h: lh }, lpts);
+      }
+      requestRender();
     } else if (k === 'selRect') {
       var r = selRect;
       selRect = null;
@@ -606,9 +868,41 @@
     }
     st = { active: false };
   }
-  function inputDown(cx, cy) { if (playing) { stopPlay(); return; } var p = toCanvas(cx, cy); toolBegin(p[0], p[1], cx, cy); }
-  function inputMove(cx, cy) { if (!st.active) return; var p = toCanvas(cx, cy); toolMove(p[0], p[1], cx, cy); }
-  function inputUp() { if (st.active) toolEnd(); }
+  // Stabilizer: the drawn point trails the pointer (exponential smoothing); higher amount = more lag and smoother lines.
+  function stabFollow() { return 1 - Math.min(0.92, T.stab / 100 * 0.92); }
+  function stabActive() { return T.stab > 0 && st.sm && (st.kind === 'stroke' || st.kind === 'stamp'); }
+  function inputDown(cx, cy) {
+    if (playing) { stopPlay(); return; }
+    var p = toCanvas(cx, cy);
+    toolBegin(p[0], p[1], cx, cy);
+    if (st.active) { st.sm = [p[0], p[1]]; st.raw = [p[0], p[1]]; }
+  }
+  function inputMove(cx, cy) {
+    if (!st.active) return;
+    var p = toCanvas(cx, cy);
+    if (stabActive()) {
+      var f = stabFollow();
+      st.raw = p;
+      st.sm = [st.sm[0] + (p[0] - st.sm[0]) * f, st.sm[1] + (p[1] - st.sm[1]) * f];
+      toolMove(st.sm[0], st.sm[1], cx, cy);
+    } else {
+      toolMove(p[0], p[1], cx, cy);
+    }
+  }
+  function inputUp() {
+    if (!st.active) return;
+    if (stabActive() && st.raw) { // let the line catch up with where the finger actually ended
+      var f = stabFollow(), n = 0;
+      while (n++ < 40) {
+        var dx = st.raw[0] - st.sm[0], dy = st.raw[1] - st.sm[1];
+        if (dx * dx + dy * dy < 0.36) break;
+        st.sm = [st.sm[0] + dx * f, st.sm[1] + dy * f];
+        toolMove(st.sm[0], st.sm[1], 0, 0);
+      }
+      toolMove(st.raw[0], st.raw[1], 0, 0);
+    }
+    toolEnd();
+  }
 
   // ---------- frames ----------
   function updateFrameInfo() {
@@ -1202,9 +1496,10 @@
 
   // ---------- UI wiring ----------
   var TOOLS = [
-    ['pen', '\u2712', 'Pen'], ['pencil', '\u270F', 'Pencil'], ['eraser', '\u232B', 'Erase'], ['fill', '\u25E7', 'Fill'],
+    ['pen', '\u2712', 'Pen'], ['pencil', '\u270F', 'Pencil'], ['marker', '\uD83D\uDD8D', 'Marker'], ['airbrush', '\u2601', 'Airbrush'],
+    ['charcoal', '\u2592', 'Charcoal'], ['eraser', '\u232B', 'Erase'], ['fill', '\u25E7', 'Fill'],
     ['line', '\u2571', 'Line'], ['rect', '\u25AD', 'Rect'], ['oval', '\u25EF', 'Oval'], ['select', '\u2610', 'Select'],
-    ['pick', '\uD83D\uDCA7', 'Pick'], ['hand', '\u270B', 'Hand']
+    ['lasso', '\u25CC', 'Lasso'], ['pick', '\uD83D\uDCA7', 'Pick'], ['hand', '\u270B', 'Hand']
   ];
   function buildUI() {
     var tb = $('toolbar');
@@ -1231,8 +1526,16 @@
       if (/^#[0-9a-fA-F]{6}$/.test(v)) setColor(v, false);
     });
     ['hH', 'hS', 'hL'].forEach(function (id) { $(id).addEventListener('input', slidersToColor); });
-    $('size').addEventListener('input', function () { T.size = +this.value; $('sizeVal').textContent = this.value; });
+    $('size').addEventListener('input', function () { setSize(+this.value); });
     $('opacity').addEventListener('input', function () { T.opacity = +this.value; $('opVal').textContent = this.value; });
+    $('stab').addEventListener('input', function () { T.stab = +this.value; $('stabVal').textContent = this.value; });
+    $('symMode').addEventListener('change', function () {
+      T.sym = this.value;
+      $('symMirrorRow').style.display = T.sym.charAt(0) === 'r' ? 'block' : 'none';
+      requestRender();
+    });
+    $('symMirror').addEventListener('change', function () { T.symMirror = this.checked; });
+    $('symGuides').addEventListener('change', function () { T.symGuides = this.checked; requestRender(); });
     $('tol').addEventListener('input', function () { T.tol = +this.value; });
     $('fillAll').addEventListener('change', function () { T.fillAll = this.checked; });
     $('shapeFill').addEventListener('change', function () { T.shapeFill = this.checked; });
@@ -1394,6 +1697,10 @@
     switch (k) {
       case 'b': setTool('pen'); break;
       case 'p': setTool('pencil'); break;
+      case 'm': setTool('marker'); break;
+      case 'a': setTool('airbrush'); break;
+      case 'c': setTool('charcoal'); break;
+      case 'q': setTool('lasso'); break;
       case 'e': setTool('eraser'); break;
       case 'g': setTool('fill'); break;
       case 'l': setTool('line'); break;
@@ -1402,8 +1709,8 @@
       case 'v': setTool('select'); break;
       case 'i': setTool('pick'); break;
       case 'h': setTool('hand'); break;
-      case '[': T.size = clamp(T.size - 2, 1, 80); $('size').value = T.size; $('sizeVal').textContent = T.size; break;
-      case ']': T.size = clamp(T.size + 2, 1, 80); $('size').value = T.size; $('sizeVal').textContent = T.size; break;
+      case '[': setSize(T.size - 2); break;
+      case ']': setSize(T.size + 2); break;
       case ' ': e.preventDefault(); togglePlay(); break;
       case 'ArrowLeft': e.preventDefault(); if (playing) stopPlay(); gotoFrame(S.cur - 1); break;
       case 'ArrowRight': e.preventDefault(); if (playing) stopPlay(); gotoFrame(S.cur + 1); break;

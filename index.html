@@ -50,6 +50,7 @@
         <h4>Tool</h4>
         <label class="sl">Size <input id="size" type="range" min="1" max="80" value="8"><span id="sizeVal">8</span></label>
         <label class="sl">Opacity <input id="opacity" type="range" min="5" max="100" value="100"><span id="opVal">100</span></label>
+        <label class="sl">Smooth <input id="stab" type="range" min="0" max="100" value="0"><span id="stabVal">0</span></label>
         <div id="optFill" style="display:none">
           <label class="sl">Tolerance <input id="tol" type="range" min="0" max="128" value="32"></label>
           <label class="chk"><input id="fillAll" type="checkbox"> Fill using all layers</label>
@@ -57,6 +58,22 @@
         <div id="optShape" style="display:none">
           <label class="chk"><input id="shapeFill" type="checkbox"> Filled shape</label>
         </div>
+      </section>
+
+      <section>
+        <h4>Symmetry</h4>
+        <select id="symMode">
+          <option value="off">Off</option>
+          <option value="v">Mirror left / right</option>
+          <option value="h">Mirror top / bottom</option>
+          <option value="both">Both axes (4-way)</option>
+          <option value="r4">Radial 4-way</option>
+          <option value="r6">Radial 6-way</option>
+          <option value="r8">Radial 8-way</option>
+        </select>
+        <label class="chk" id="symMirrorRow" style="display:none"><input id="symMirror" type="checkbox"> Mirror each wedge</label>
+        <label class="chk"><input id="symGuides" type="checkbox" checked> Show guides</label>
+        <p class="hint">Works with brushes, eraser, line and shapes. Axes cross at the canvas centre.</p>
       </section>
 
       <section>
@@ -76,7 +93,7 @@
           <button id="btnCommit">Apply</button>
           <button id="btnDelSel">Delete / Clear</button>
         </div>
-        <p class="hint">Select a box, drag to move. With no selection, edits apply to the whole layer.</p>
+        <p class="hint">Select (box) or Lasso (freehand), then drag inside to move. Drag a corner to scale, an edge to stretch, the blue dot (or just outside a corner) to rotate. With no selection, edits apply to the whole layer.</p>
       </section>
 
       <section>
