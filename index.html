@@ -1,177 +1,129 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#11151d">
-  <title>FrameForge — Animation Studio</title>
-  <link rel="stylesheet" href="css/style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#1c1c1e">
+<title>Flipbook Studio</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="brand-mark">F</span><span>FrameForge</span><span class="tag">LOCAL STUDIO</span></div>
-    <div class="top-actions">
-      <button id="newProjectBtn" class="button subtle">New</button>
-      <button id="saveBtn" class="button subtle">Save</button>
-      <button id="exportProjectBtn" class="button subtle">Export project</button>
-      <button id="importProjectBtn" class="button primary">Import</button>
-      <input id="projectFileInput" type="file" accept=".frameforge,.json,application/json" hidden>
-    </div>
+<div id="app">
+
+  <header id="topbar">
+    <button id="btnNew">New</button>
+    <button id="btnOpen">Open</button>
+    <button id="btnSave">Save</button>
+    <button id="btnExport" class="primary">Export</button>
+    <span class="sep"></span>
+    <button id="btnUndo">&#8630;</button>
+    <button id="btnRedo">&#8631;</button>
+    <span class="sep"></span>
+    <button id="btnZoomOut">&minus;</button>
+    <span id="zoomLabel">100%</span>
+    <button id="btnZoomIn">+</button>
+    <button id="btnFit">Fit</button>
+    <button id="btnGrid">Grid</button>
+    <button id="btnPanel">Panel</button>
+    <input type="file" id="fileOpen" accept=".json,.flipbook,application/json" style="display:none">
+    <input type="file" id="fileImg" accept="image/*" style="display:none">
   </header>
 
-  <main class="app-shell">
-    <aside class="tool-panel panel">
-      <div class="panel-heading">TOOLS</div>
-      <div class="tool-grid" id="toolGrid">
-        <button class="tool active" data-tool="pencil" title="Pencil"><span>✎</span><small>Pencil</small></button>
-        <button class="tool" data-tool="brush" title="Brush"><span>🖌</span><small>Brush</small></button>
-        <button class="tool" data-tool="eraser" title="Eraser"><span>⌫</span><small>Eraser</small></button>
-        <button class="tool" data-tool="line" title="Line"><span>／</span><small>Line</small></button>
-        <button class="tool" data-tool="rect" title="Rectangle"><span>▱</span><small>Rectangle</small></button>
-        <button class="tool" data-tool="ellipse" title="Ellipse"><span>◯</span><small>Ellipse</small></button>
-        <button class="tool" data-tool="fill" title="Background fill"><span>▰</span><small>Fill bg</small></button>
-        <button class="tool" data-tool="eyedropper" title="Color picker"><span>◉</span><small>Picker</small></button>
-        <button class="tool" data-tool="select" title="Select and transform"><span>⬚</span><small>Select</small></button>
-      </div>
-      <div class="control-group">
-        <label for="colorInput">Color</label>
-        <div class="color-row"><input id="colorInput" type="color" value="#20232b"><span id="colorHex">#20232B</span></div>
-      </div>
-      <div class="control-group">
-        <div class="label-line"><label for="sizeInput">Brush size</label><output id="sizeValue">4 px</output></div>
-        <input id="sizeInput" type="range" min="1" max="48" value="4">
-      </div>
-      <div class="control-group brush-settings">
-        <label for="brushPreset">Brush style</label>
-        <select id="brushPreset">
-          <option value="ink" selected>Ink · crisp lines</option>
-          <option value="marker">Marker · broad translucent</option>
-          <option value="airbrush">Airbrush · soft spray</option>
-          <option value="watercolor">Watercolor · soft washes</option>
-          <option value="chalk">Chalk · textured edge</option>
-          <option value="pixel">Pixel · square edges</option>
-        </select>
-        <div class="label-line"><label for="opacityInput">Opacity</label><output id="opacityValue">100%</output></div>
-        <input id="opacityInput" type="range" min="5" max="100" value="100">
-        <div class="label-line"><label for="softnessInput">Softness</label><output id="softnessValue">60%</output></div>
-        <input id="softnessInput" type="range" min="0" max="100" value="60">
-        <p class="muted small">Softness mainly affects airbrush and watercolor.</p>
-      </div>
-      <div class="control-group">
-        <label for="canvasPreset">Canvas size</label>
-        <select id="canvasPreset">
-          <option value="640x360">640 × 360 — Light</option>
-          <option value="800x450" selected>800 × 450 — Recommended</option>
-          <option value="960x540">960 × 540</option>
-          <option value="1280x720">1280 × 720 — Heavy</option>
-          <option value="custom">Custom…</option>
-        </select>
-        <div id="customSize" class="custom-size hidden">
-          <input id="canvasWidth" type="number" min="64" max="1920" value="800" aria-label="Canvas width">
-          <span>×</span>
-          <input id="canvasHeight" type="number" min="64" max="1080" value="450" aria-label="Canvas height">
-          <button id="applySizeBtn" class="button tiny">Apply</button>
-        </div>
-      </div>
-      <div class="control-group">
-        <label for="backgroundInput">Canvas background</label>
-        <div class="color-row"><input id="backgroundInput" type="color" value="#ffffff"><button id="transparentBtn" class="button tiny">Transparent</button></div>
-      </div>
-      <div class="control-group">
-        <label>Artwork import</label>
-        <button id="importImageBtn" class="button subtle full">Import PNG / JPEG</button>
-        <input id="imageFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-        <p class="muted small">Each image gets its own layer. Use Select to move, resize, and rotate it independently.</p>
-      </div>
-      <div class="control-group">
-        <label>History</label>
-        <div class="button-row">
-          <button id="undoBtn" class="button subtle full">↶ Undo</button>
-          <button id="redoBtn" class="button subtle full">↷ Redo</button>
-        </div>
-      </div>
-    </aside>
+  <div id="main">
+    <nav id="toolbar"></nav>
 
-    <section class="workspace">
-      <div class="workspace-toolbar panel">
-        <div class="project-title-wrap"><input id="projectName" value="Untitled animation" maxlength="80" aria-label="Project name"><span id="saveStatus" class="status">Not saved</span></div>
-        <div class="view-actions">
-          <button id="fitBtn" class="button subtle" title="Fit canvas">Fit</button>
-          <button id="zoomOutBtn" class="button subtle" title="Zoom out">−</button>
-          <span id="zoomLabel" class="zoom-label">100%</span>
-          <button id="zoomInBtn" class="button subtle" title="Zoom in">+</button>
-          <button id="onionBtn" class="button toggle active">Onion skin</button>
-        </div>
-      </div>
-      <div id="stage" class="stage">
-        <div class="stage-hint" id="stageHint">Choose a tool and draw on the canvas</div>
-        <div class="canvas-wrap" id="canvasWrap">
-          <canvas id="onionCanvas" aria-hidden="true"></canvas>
-          <canvas id="drawCanvas" aria-label="Animation drawing canvas"></canvas>
-        </div>
-      </div>
-      <div class="timeline panel">
-        <div class="timeline-head">
-          <div class="timeline-title">TIMELINE <span id="frameCount" class="count-pill">1 frame</span></div>
-          <div class="playback-controls">
-            <button id="firstFrameBtn" class="icon-button" title="First frame">|◀</button>
-            <button id="prevFrameBtn" class="icon-button" title="Previous frame">◀</button>
-            <button id="playBtn" class="button primary play-button">▶ Play</button>
-            <button id="nextFrameBtn" class="icon-button" title="Next frame">▶</button>
-            <button id="lastFrameBtn" class="icon-button" title="Last frame">▶|</button>
-          </div>
-          <div class="fps-control"><label for="fpsInput">FPS</label><input id="fpsInput" type="number" min="1" max="24" value="8"></div>
-        </div>
-        <div id="framesStrip" class="frames-strip" aria-label="Animation frames"></div>
-        <div class="timeline-footer">
-          <div class="button-row">
-            <button id="addFrameBtn" class="button subtle">＋ Frame</button>
-            <button id="duplicateFrameBtn" class="button subtle">Duplicate</button>
-            <button id="copyFrameBtn" class="button subtle">Copy</button>
-            <button id="pasteFrameBtn" class="button subtle">Paste</button>
-            <button id="clearFrameBtn" class="button subtle">Clear</button>
-            <button id="deleteFrameBtn" class="button danger-subtle">Delete</button>
-          </div>
-          <div class="frame-duration-control"><label for="durationInput">Selected frame duration</label><input id="durationInput" type="number" min="20" max="10000" step="10" value="125"><span>ms</span></div>
-          <div class="timeline-tip">Tip: duplicate a frame, then make a small change.</div>
-        </div>
-      </div>
-    </section>
+    <div id="stage"><canvas id="view"></canvas></div>
 
-    <aside class="right-panel panel">
-      <div class="panel-heading">PROJECT</div>
-      <div class="project-stat"><span>Current frame</span><strong id="currentFrameStat">1 / 1</strong></div>
-      <div class="project-stat"><span>Canvas</span><strong id="canvasStat">800 × 450</strong></div>
-      <div class="project-stat"><span>Playback</span><strong id="playbackStat">8 FPS</strong></div>
-      <hr>
-      <div class="panel-heading">LAYERS</div>
-      <div class="layer-toolbar">
-        <button id="addLayerBtn" class="button subtle">＋ Layer</button>
-        <button id="deleteLayerBtn" class="button danger-subtle">Delete</button>
-      </div>
-      <div id="layersList" class="layers-list"></div>
-      <div class="layer-toolbar">
-        <button id="layerUpBtn" class="button subtle">↑ Up</button>
-        <button id="layerDownBtn" class="button subtle">↓ Down</button>
-      </div>
-      <hr>
-      <div class="panel-heading">EXPORT</div>
-      <button id="exportPngBtn" class="button subtle full">Export current frame · PNG</button>
-      <button id="exportAllPngBtn" class="button subtle full">Export all frames · PNGs</button>
-      <button id="exportGifBtn" class="button subtle full">Export animation · GIF</button>
-      <p class="muted small">GIF export is kept lightweight and runs locally. Large animations may take time on older iPads.</p>
-      <hr>
-      <div class="panel-heading">LOCAL STORAGE</div>
-      <p class="muted small">Projects are saved in this browser on this device. Use Export project to move work between devices.</p>
-      <button id="openLibraryBtn" class="button subtle full">Open saved projects</button>
-      <div id="library" class="library hidden"></div>
-      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+    <aside id="side">
+      <section>
+        <h4>Color</h4>
+        <div class="colorrow"><div id="colorPrev"></div><input id="hex" type="text" maxlength="7" value="#222222" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+        <label class="sl">H <input id="hH" type="range" min="0" max="360" value="0"></label>
+        <label class="sl">S <input id="hS" type="range" min="0" max="100" value="0"></label>
+        <label class="sl">L <input id="hL" type="range" min="0" max="100" value="13"></label>
+        <div id="swatches"></div>
+      </section>
+
+      <section>
+        <h4>Tool</h4>
+        <label class="sl">Size <input id="size" type="range" min="1" max="80" value="8"><span id="sizeVal">8</span></label>
+        <label class="sl">Opacity <input id="opacity" type="range" min="5" max="100" value="100"><span id="opVal">100</span></label>
+        <div id="optFill" style="display:none">
+          <label class="sl">Tolerance <input id="tol" type="range" min="0" max="128" value="32"></label>
+          <label class="chk"><input id="fillAll" type="checkbox"> Fill using all layers</label>
+        </div>
+        <div id="optShape" style="display:none">
+          <label class="chk"><input id="shapeFill" type="checkbox"> Filled shape</label>
+        </div>
+      </section>
+
+      <section>
+        <h4>Selection / Edit</h4>
+        <div class="grid3">
+          <button id="btnRotL" title="Rotate left">&#8634;</button>
+          <button id="btnRotR" title="Rotate right">&#8635;</button>
+          <button id="btnFlipH" title="Flip horizontal">&#8596;</button>
+          <button id="btnScaleDn" title="Smaller">&minus;</button>
+          <button id="btnScaleUp" title="Bigger">+</button>
+          <button id="btnFlipV" title="Flip vertical">&#8597;</button>
+          <button id="btnCopy">Copy</button>
+          <button id="btnPaste">Paste</button>
+          <button id="btnImport">Image</button>
+        </div>
+        <div class="grid2">
+          <button id="btnCommit">Apply</button>
+          <button id="btnDelSel">Delete / Clear</button>
+        </div>
+        <p class="hint">Select a box, drag to move. With no selection, edits apply to the whole layer.</p>
+      </section>
+
+      <section>
+        <h4>Layers</h4>
+        <div id="layers"></div>
+        <label class="sl">Opacity <input id="lopacity" type="range" min="0" max="100" value="100"></label>
+        <div class="grid3">
+          <button id="btnLAdd">+ Add</button>
+          <button id="btnLDup">Copy</button>
+          <button id="btnLDel">Delete</button>
+          <button id="btnLUp">Up</button>
+          <button id="btnLDown">Down</button>
+          <button id="btnLRename">Rename</button>
+        </div>
+      </section>
     </aside>
-  </main>
-  <footer class="footer"><span>FrameForge</span><span>Local-first · No account · No uploads</span><span id="storageSupport">Checking local storage…</span></footer>
-  <script src="js/gif.js"></script>
-  <script src="js/storage.js"></script>
-  <script src="js/drawing.js"></script>
-  <script src="js/app.js"></script>
+  </div>
+
+  <footer id="timeline">
+    <div id="tlControls">
+      <button id="btnPrev">&#9664;</button>
+      <button id="btnPlay">&#9654;</button>
+      <button id="btnNext">&#9654;&#9654;</button>
+      <label class="inl">FPS <input id="fps" type="number" min="1" max="30" value="12"></label>
+      <label class="inl"><input id="loop" type="checkbox" checked> Loop</label>
+      <label class="inl">Onion
+        <select id="onion"><option value="0">Off</option><option value="1" selected>1</option><option value="2">2</option></select>
+      </label>
+      <span class="sep"></span>
+      <button id="btnFAdd">+ Frame</button>
+      <button id="btnFDup">Copy</button>
+      <button id="btnFDel">Delete</button>
+      <button id="btnFLeft">&#9664; Move</button>
+      <button id="btnFRight">Move &#9654;</button>
+      <button id="btnHoldDn">Hold &minus;</button>
+      <button id="btnHoldUp">Hold +</button>
+      <button id="btnTween">Tween</button>
+      <span id="frameInfo"></span>
+    </div>
+    <div id="strip"></div>
+  </footer>
+</div>
+
+<div id="modal"><div class="box"><h3 id="mTitle"></h3><div id="mBody"></div><div id="mBtns"></div></div></div>
+<div id="toast"></div>
+
+<script src="gif.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
